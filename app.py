@@ -15,6 +15,18 @@ def calculate_semi_monthly_tax(taxable_income):
     else:
         return 91770.70 + (taxable_income - 333333.00) * 0.35
 
+def get_sss_contribution(compensation):
+    """Calculates SSS Employee Share (5%) per cutoff based on 2026 MSC Brackets"""
+    # The minimum MSC for 2026 is PHP 5,000 and the maximum is PHP 35,000
+    if compensation < 5250:
+        msc = 5000
+    elif compensation >= 34750:
+        msc = 35000
+    else:
+        # Dynamically calculates the exact bracket for any given amount
+        msc = int((compensation - 250) // 500 + 1) * 500
+    return msc * 0.05
+
 def calculate_salary(base_pay, de_minimis, bonuses, nd_days, odd_shift_days, ot_hours, regular_holiday_days, special_holiday_days):
     # Core Rates
     daily_rate = (base_pay * 12) / 261
@@ -38,40 +50,46 @@ def calculate_salary(base_pay, de_minimis, bonuses, nd_days, odd_shift_days, ot_
     semi_de_minimis = de_minimis / 2
     
     semi_gross_earnings = semi_base + semi_nd + semi_odd + semi_ot + semi_holiday + semi_bonus
-    total_gross_taxable = semi_gross_earnings * 2
+    total_gross_earnings = semi_gross_earnings * 2
     
-    # 2. Statutory Deductions (Deducted ONCE per month)
-    # SSS Employee Share: Corrected to 4.5% of MSC (Max MSC is Php 35,000 for 2026)
-    msc = min(base_pay, 35000.00)
-    sss_contribution = msc * 0.045 
-    philhealth = base_pay * 0.025  # Employee share is 2.5%
-    pag_ibig = 200.00  # Statutory maximum cap
-    total_gov_deductions = sss_contribution + philhealth + pag_ibig
+    # 2. Government Deductions Logic
+    # SSS applies a balancing act to ensure the monthly total strictly adheres to 2026 Caps
+    total_sss_monthly = get_sss_contribution(total_gross_earnings)
+    sss_c1 = get_sss_contribution(semi_gross_earnings)
+    sss_c2 = total_sss_monthly - sss_c1 
     
-    # 3. First Cutoff Computation (Includes all Gov Deductions)
-    taxable_income_c1 = semi_gross_earnings - total_gov_deductions
-    # Ensure taxable income doesn't fall below zero for tax calculation
-    tax_c1 = calculate_semi_monthly_tax(max(taxable_income_c1, 0)) 
-    net_c1 = semi_gross_earnings - total_gov_deductions - tax_c1 + semi_de_minimis
+    # PhilHealth & Pag-IBIG are deducted entirely on the 1st Cutoff
+    philhealth_c1 = base_pay * 0.025  # Employee share is 2.5% of full Monthly Basic Pay
+    pag_ibig_c1 = 200.00  # Statutory maximum cap for Pag-IBIG
     
-    # 4. Second Cutoff Computation (No Gov Deductions)
-    taxable_income_c2 = semi_gross_earnings
+    philhealth_c2 = 0.00
+    pag_ibig_c2 = 0.00
+    
+    # 3. First Cutoff Computation
+    total_gov_c1 = sss_c1 + philhealth_c1 + pag_ibig_c1
+    taxable_income_c1 = semi_gross_earnings - total_gov_c1
+    tax_c1 = calculate_semi_monthly_tax(max(taxable_income_c1, 0))
+    net_c1 = semi_gross_earnings - total_gov_c1 - tax_c1 + semi_de_minimis
+    
+    # 4. Second Cutoff Computation
+    total_gov_c2 = sss_c2 + philhealth_c2 + pag_ibig_c2
+    taxable_income_c2 = semi_gross_earnings - total_gov_c2
     tax_c2 = calculate_semi_monthly_tax(max(taxable_income_c2, 0))
-    net_c2 = semi_gross_earnings - tax_c2 + semi_de_minimis
+    net_c2 = semi_gross_earnings - total_gov_c2 - tax_c2 + semi_de_minimis
     
     return {
         "semi_base": semi_base,
         "semi_extras": semi_nd + semi_odd + semi_ot + semi_holiday + semi_bonus,
         "semi_de_minimis": semi_de_minimis,
-        "total_gross_taxable": total_gross_taxable,
-        "sss": sss_contribution,
-        "philhealth": philhealth,
-        "pag_ibig": pag_ibig,
-        "total_gov_deductions": total_gov_deductions,
-        "taxable_income_c1": taxable_income_c1,
+        "total_gross_earnings": total_gross_earnings,
+        "sss_c1": sss_c1,
+        "philhealth_c1": philhealth_c1,
+        "pag_ibig_c1": pag_ibig_c1,
         "tax_c1": tax_c1,
         "net_c1": net_c1,
-        "taxable_income_c2": taxable_income_c2,
+        "sss_c2": sss_c2,
+        "philhealth_c2": philhealth_c2,
+        "pag_ibig_c2": pag_ibig_c2,
         "tax_c2": tax_c2,
         "net_c2": net_c2,
         "total_net": net_c1 + net_c2
@@ -82,7 +100,7 @@ def calculate_salary(base_pay, de_minimis, bonuses, nd_days, odd_shift_days, ot_
 st.set_page_config(page_title="REPH Transparent Salary Calculator", layout="wide")
 
 st.title("Semi-Monthly Salary Calculator")
-st.markdown("Calculates dual-cutoff payouts incorporating all statutory deductions in the 1st Cutoff.")
+st.markdown("Calculates dynamic SSS and Withholding Tax semi-monthly, with Pag-IBIG & PhilHealth exclusively on the 1st Cutoff.")
 
 # Input Columns
 col1, col2, col3 = st.columns(3)
@@ -113,7 +131,7 @@ if st.button("Calculate Salary", type="primary"):
     # High-level Output
     st.subheader("Payout Summary")
     res_col1, res_col2, res_col3 = st.columns(3)
-    res_col1.metric("1st Cutoff Net Pay (w/ Gov Deductions)", f"Php {d['net_c1']:,.2f}")
+    res_col1.metric("1st Cutoff Net Pay", f"Php {d['net_c1']:,.2f}")
     res_col2.metric("2nd Cutoff Net Pay", f"Php {d['net_c2']:,.2f}")
     res_col3.metric("Total Monthly Net Pay", f"Php {d['total_net']:,.2f}")
     
@@ -129,9 +147,9 @@ if st.button("Calculate Salary", type="primary"):
         st.write(f"De Minimis Benefit (Split): `+ Php {d['semi_de_minimis']:,.2f}`")
         st.markdown("---")
         st.markdown("**Deductions:**")
-        st.write(f"SSS Contribution: `- Php {d['sss']:,.2f}`")
-        st.write(f"PhilHealth (2.5%): `- Php {d['philhealth']:,.2f}`")
-        st.write(f"Pag-IBIG: `- Php {d['pag_ibig']:,.2f}`")
+        st.write(f"SSS Contribution: `- Php {d['sss_c1']:,.2f}`")
+        st.write(f"PhilHealth (2.5%): `- Php {d['philhealth_c1']:,.2f}`")
+        st.write(f"Pag-IBIG: `- Php {d['pag_ibig_c1']:,.2f}`")
         st.write(f"Withholding Tax: `- Php {d['tax_c1']:,.2f}`")
         st.success(f"**Net Payout: Php {d['net_c1']:,.2f}**")
         
@@ -142,8 +160,8 @@ if st.button("Calculate Salary", type="primary"):
         st.write(f"De Minimis Benefit (Split): `+ Php {d['semi_de_minimis']:,.2f}`")
         st.markdown("---")
         st.markdown("**Deductions:**")
-        st.write(f"SSS Contribution: `- Php 0.00`")
-        st.write(f"PhilHealth (2.5%): `- Php 0.00`")
-        st.write(f"Pag-IBIG: `- Php 0.00`")
+        st.write(f"SSS Contribution: `- Php {d['sss_c2']:,.2f}`")
+        st.write(f"PhilHealth (2.5%): `- Php {d['philhealth_c2']:,.2f}`")
+        st.write(f"Pag-IBIG: `- Php {d['pag_ibig_c2']:,.2f}`")
         st.write(f"Withholding Tax: `- Php {d['tax_c2']:,.2f}`")
         st.success(f"**Net Payout: Php {d['net_c2']:,.2f}**")
