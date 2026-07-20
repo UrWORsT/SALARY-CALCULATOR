@@ -33,7 +33,8 @@ def calculate_salary(base_pay, de_minimis, bonuses, nd_days, odd_shift_days, ot_
     hourly_rate = daily_rate / 8
     
     # 1. Total Allowances & Premiums for the month
-    nd_pay = nd_days * 8 * hourly_rate * 0.15
+    # Updated to reflect a 6:00 PM - 2:00 AM shift (only 4 hours fall inside the 10 PM - 6 AM window)
+    nd_pay = nd_days * 4 * hourly_rate * 0.15
     odd_shift_pay = odd_shift_days * 150.00
     ot_pay = ot_hours * hourly_rate * 1.25
     regular_holiday_pay = regular_holiday_days * daily_rate * 1.00
@@ -113,7 +114,7 @@ with col1:
 
 with col2:
     st.subheader("Shift Adjustments (Monthly Total)")
-    nd_days = st.number_input("Night Differential Days (9PM-6AM)", min_value=0, value=0, help="Assumes 8 hours of ND per shift.")
+    nd_days = st.number_input("Night Differential Days", min_value=0, value=0, help="Assumes 4 hours of ND per shift (6PM-2AM schedule).")
     odd_shift_days = st.number_input("Odd Shift Days (11PM-5AM)", min_value=0, value=0)
     ot_hours = st.number_input("Regular Overtime Hours", min_value=0.0, value=0.0, step=1.0)
 
